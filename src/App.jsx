@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { AGENTS, PROJECTS } from "./agents.js";
 
-
 // ─── Typing indicator ───────────────────────────────────────
 const Dots = ({ color }) => (
   <span style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
@@ -79,71 +78,117 @@ const Message = ({ msg, agent }) => (
   </div>
 );
 
+// ─── Meeting Room Round ──────────────────────────────────────
+const MeetingRound = ({ round }) => (
+  <div style={{ animation: "fadeUp 0.25s ease", marginBottom: 24 }}>
+    {/* Question */}
+    <div style={{
+      display: "flex", justifyContent: "flex-start", marginBottom: 14,
+    }}>
+      <div style={{
+        padding: "9px 13px", borderRadius: "8px 2px 8px 8px",
+        background: "#0e0e1e", border: "1px solid #181828",
+        fontSize: 13, lineHeight: 1.75, color: "#c8c8d8",
+        direction: "rtl", maxWidth: "78%", whiteSpace: "pre-wrap",
+      }}>{round.question}</div>
+    </div>
+    {/* Responses grid */}
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {round.responses.map(({ agent, content, loading: isLoading }) => (
+        <div key={agent.id} style={{
+          display: "flex", gap: 8, alignItems: "flex-start",
+          animation: "fadeUp 0.2s ease",
+        }}>
+          <div style={{
+            width: 28, height: 28, borderRadius: 5, flexShrink: 0,
+            background: agent.accent + "15",
+            border: `1px solid ${agent.accent}35`,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 12, color: agent.accent, fontWeight: 800,
+          }}>{agent.emoji}</div>
+          <div style={{ flex: 1 }}>
+            <div style={{
+              fontSize: 8, color: agent.accent + "90", letterSpacing: 1.5,
+              marginBottom: 4, fontWeight: 700,
+            }}>{agent.name} · {agent.tag}</div>
+            <div style={{
+              padding: "9px 13px", borderRadius: "2px 8px 8px 8px",
+              background: "#090916",
+              border: `1px solid ${agent.accent}20`,
+              fontSize: 13, lineHeight: 1.75, whiteSpace: "pre-wrap",
+              direction: "rtl", color: "#c8c8d8",
+            }}>
+              {isLoading ? <Dots color={agent.accent} /> : content}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
+// ─── API call helper ─────────────────────────────────────────
+const callAgent = async (agent, messages) => {
+  const res = await fetch("/api/anthropic", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-6",
+      max_tokens: 800,
+      system: agent.system,
+      messages,
+    }),
+  });
+  const data = await res.json();
+  if (data.error) throw new Error(data.error.message);
+  return data.content?.map(b => b.text || "").join("") || "שגיאה בתגובה.";
+};
+
 // ─── Main App ───────────────────────────────────────────────
 export default function App() {
+  const [meetingMode, setMeetingMode]     = useState(false);
   const [activeAgent, setActiveAgent]     = useState(AGENTS[0]);
   const [activeProject, setActiveProject] = useState(PROJECTS[0]);
   const [conversations, setConversations] = useState(
     Object.fromEntries(AGENTS.map(a => [a.id, []]))
   );
+  const [meetingRounds, setMeetingRounds] = useState([]);
   const [input, setInput]   = useState("");
   const [loading, setLoading] = useState(false);
   const [sideCollapsed, setSideCollapsed] = useState(false);
   const [showQuick, setShowQuick] = useState(true);
-  const [apiError, setApiError] = useState(false);
   const bottomRef = useRef(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [conversations, loading, activeAgent]);
+  }, [conversations, meetingRounds, loading, activeAgent, meetingMode]);
 
   const msgs = conversations[activeAgent.id];
   const totalQueries = Object.values(conversations)
     .reduce((s, c) => s + c.filter(m => m.role === "user").length, 0);
 
+  // ── Single agent send ──
   const sendMessage = async (text) => {
     const t = (text || input).trim();
     if (!t || loading) return;
     setInput("");
     setLoading(true);
     setShowQuick(false);
-    setApiError(false);
 
-    // הוסף context פרויקט
     const contextualText = `[Project: ${activeProject.label}]\n${t}`;
-    const userMsg = { role: "user", content: t }; // מציג בלי prefix
+    const userMsg = { role: "user", content: t };
     const apiMsg  = { role: "user", content: contextualText };
-
     const history = [...conversations[activeAgent.id], userMsg];
-    const apiHistory = [
-      ...conversations[activeAgent.id],
-      apiMsg,
-    ];
 
     setConversations(p => ({ ...p, [activeAgent.id]: history }));
 
     try {
-      const res = await fetch("/api/anthropic", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-6",
-          max_tokens: 1000,
-          system: activeAgent.system,
-          messages: apiHistory.map(m => ({ role: m.role, content: m.content })),
-        }),
-      });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error.message);
-      const reply = data.content?.map(b => b.text || "").join("") || "שגיאה בתגובה.";
+      const reply = await callAgent(activeAgent, [...conversations[activeAgent.id], apiMsg]);
       setConversations(p => ({
         ...p,
         [activeAgent.id]: [...history, { role: "assistant", content: reply }]
       }));
     } catch (err) {
-      setApiError(true);
       setConversations(p => ({
         ...p,
         [activeAgent.id]: [...history, {
@@ -155,10 +200,54 @@ export default function App() {
     setLoading(false);
   };
 
-  const clearConversation = () => {
-    setConversations(p => ({ ...p, [activeAgent.id]: [] }));
-    setShowQuick(true);
+  // ── Meeting room send — all agents in parallel ──
+  const sendMeetingMessage = async (text) => {
+    const t = (text || input).trim();
+    if (!t || loading) return;
+    setInput("");
+    setLoading(true);
+
+    const contextualText = `[Project: ${activeProject.label}]\n${t}`;
+
+    // Add round with all agents in loading state
+    const newRound = {
+      question: t,
+      responses: AGENTS.map(a => ({ agent: a, content: "", loading: true })),
+    };
+    setMeetingRounds(prev => [...prev, newRound]);
+
+    // Call all agents in parallel
+    const results = await Promise.allSettled(
+      AGENTS.map(a => callAgent(a, [{ role: "user", content: contextualText }]))
+    );
+
+    setMeetingRounds(prev => {
+      const updated = [...prev];
+      const round = { ...updated[updated.length - 1] };
+      round.responses = AGENTS.map((a, i) => ({
+        agent: a,
+        content: results[i].status === "fulfilled"
+          ? results[i].value
+          : `⚠️ שגיאה: ${results[i].reason?.message}`,
+        loading: false,
+      }));
+      updated[updated.length - 1] = round;
+      return updated;
+    });
+
+    setLoading(false);
   };
+
+  const clearConversation = () => {
+    if (meetingMode) {
+      setMeetingRounds([]);
+    } else {
+      setConversations(p => ({ ...p, [activeAgent.id]: [] }));
+      setShowQuick(true);
+    }
+  };
+
+  const MEETING_ACCENT = "#ffffff";
 
   return (
     <div style={{
@@ -204,13 +293,41 @@ export default function App() {
           }}>{sideCollapsed ? "›" : "‹"}</button>
         </div>
 
+        {/* Meeting Room entry */}
+        <div className="arow" onClick={() => { setMeetingMode(true); }}
+          style={{
+            padding: sideCollapsed ? "9px 8px" : "8px 12px",
+            cursor: "pointer",
+            background: meetingMode ? "#0d0d1c" : "transparent",
+            borderRight: meetingMode ? "2px solid #ffffff30" : "2px solid transparent",
+            borderBottom: "1px solid #111120",
+            display: "flex", alignItems: "center",
+            gap: sideCollapsed ? 0 : 9,
+            justifyContent: sideCollapsed ? "center" : "flex-start",
+          }}>
+          <div style={{
+            width: 26, height: 26, borderRadius: 5, flexShrink: 0,
+            background: meetingMode ? "#ffffff12" : "#0e0e18",
+            border: `1px solid ${meetingMode ? "#ffffff30" : "#161626"}`,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 11, color: meetingMode ? "#fff" : "#2a2a40", fontWeight: 700,
+          }}>⬡</div>
+          {!sideCollapsed && (
+            <div>
+              <div style={{ fontSize: 11, color: meetingMode ? "#eee" : "#444", fontWeight: meetingMode ? 600 : 400 }}>חדר ישיבות</div>
+              <div style={{ fontSize: 8, color: meetingMode ? "#ffffff60" : "#222", letterSpacing: 1 }}>ALL</div>
+            </div>
+          )}
+        </div>
+
         {/* Agents */}
         <div style={{ flex: 1, overflowY: "auto", paddingTop: 6 }}>
           {AGENTS.map(agent => {
-            const active = agent.id === activeAgent.id;
+            const active = !meetingMode && agent.id === activeAgent.id;
             const cnt = conversations[agent.id].filter(m => m.role === "user").length;
             return (
-              <div key={agent.id} className="arow" onClick={() => { setActiveAgent(agent); setShowQuick(msgs.length === 0); }}
+              <div key={agent.id} className="arow"
+                onClick={() => { setMeetingMode(false); setActiveAgent(agent); setShowQuick(msgs.length === 0); }}
                 style={{
                   padding: sideCollapsed ? "9px 8px" : "8px 12px",
                   cursor: "pointer",
@@ -265,24 +382,44 @@ export default function App() {
         <div style={{
           padding: "10px 18px",
           background: "#080810",
-          borderBottom: `1px solid ${activeAgent.accent}18`,
+          borderBottom: `1px solid ${meetingMode ? "#ffffff12" : activeAgent.accent + "18"}`,
           display: "flex", alignItems: "center", gap: 12,
         }}>
-          <div style={{
-            width: 34, height: 34, borderRadius: 7, flexShrink: 0,
-            background: activeAgent.accent + "12",
-            border: `1px solid ${activeAgent.accent}35`,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 15, color: activeAgent.accent, fontWeight: 800,
-          }}>{activeAgent.emoji}</div>
-          <div style={{ flex: 1 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontWeight: 700, color: "#eee", fontSize: 13 }}>{activeAgent.name}</span>
-              <span style={{ fontSize: 8, padding: "2px 6px", background: activeAgent.accent+"14", color: activeAgent.accent, borderRadius: 3, letterSpacing: 1.5, fontWeight: 700 }}>{activeAgent.tag}</span>
-              <span style={{ fontSize: 10, color: "#2a2a40" }}>{activeAgent.role}</span>
-            </div>
-            <div style={{ fontSize: 9, color: "#1e1e30", marginTop: 1 }}>{activeAgent.description}</div>
-          </div>
+          {meetingMode ? (
+            <>
+              <div style={{
+                width: 34, height: 34, borderRadius: 7, flexShrink: 0,
+                background: "#ffffff0a", border: "1px solid #ffffff20",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 15, color: "#fff", fontWeight: 800,
+              }}>⬡</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontWeight: 700, color: "#eee", fontSize: 13 }}>חדר ישיבות</span>
+                  <span style={{ fontSize: 8, padding: "2px 6px", background: "#ffffff10", color: "#ffffff80", borderRadius: 3, letterSpacing: 1.5, fontWeight: 700 }}>ALL AGENTS</span>
+                </div>
+                <div style={{ fontSize: 9, color: "#1e1e30", marginTop: 1 }}>שאלה אחת — כל הסוכנים עונים במקביל</div>
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{
+                width: 34, height: 34, borderRadius: 7, flexShrink: 0,
+                background: activeAgent.accent + "12",
+                border: `1px solid ${activeAgent.accent}35`,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 15, color: activeAgent.accent, fontWeight: 800,
+              }}>{activeAgent.emoji}</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontWeight: 700, color: "#eee", fontSize: 13 }}>{activeAgent.name}</span>
+                  <span style={{ fontSize: 8, padding: "2px 6px", background: activeAgent.accent+"14", color: activeAgent.accent, borderRadius: 3, letterSpacing: 1.5, fontWeight: 700 }}>{activeAgent.tag}</span>
+                  <span style={{ fontSize: 10, color: "#2a2a40" }}>{activeAgent.role}</span>
+                </div>
+                <div style={{ fontSize: 9, color: "#1e1e30", marginTop: 1 }}>{activeAgent.description}</div>
+              </div>
+            </>
+          )}
 
           {/* Project selector */}
           <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
@@ -295,7 +432,7 @@ export default function App() {
           </div>
 
           {/* Clear button */}
-          {msgs.length > 0 && (
+          {(meetingMode ? meetingRounds.length > 0 : msgs.length > 0) && (
             <button className="clr" onClick={clearConversation} style={{
               background: "none", border: "none", color: "#2a2a40",
               cursor: "pointer", fontSize: 10, fontFamily: "inherit",
@@ -307,86 +444,98 @@ export default function App() {
         {/* Messages area */}
         <div style={{ flex: 1, overflowY: "auto", padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}>
 
-          {/* Empty state + Quick Actions */}
-          {msgs.length === 0 && (
-            <div style={{ animation: "fadeUp 0.35s ease" }}>
-              {/* Agent intro */}
-              <div style={{ textAlign: "center", marginBottom: 28, paddingTop: 20 }}>
-                <div style={{ fontSize: 26, color: activeAgent.accent+"30", marginBottom: 8 }}>{activeAgent.emoji}</div>
-                <div style={{ fontSize: 12, color: "#2a2a3a" }}>{activeAgent.name} · {activeAgent.role}</div>
-                <div style={{ fontSize: 10, color: "#161626", marginTop: 3 }}>{activeAgent.description}</div>
-              </div>
-
-              {/* Quick actions */}
-              {showQuick && (
-                <div>
-                  <div style={{ fontSize: 9, color: "#1e1e30", letterSpacing: 2, marginBottom: 10, textAlign: "center" }}>
-                    שאלות מהירות
-                  </div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 7, justifyContent: "center", maxWidth: 620, margin: "0 auto" }}>
-                    {activeAgent.quickActions.map((qa, i) => (
-                      <QuickBtn key={i} label={qa.label} accent={activeAgent.accent}
-                        onClick={() => sendMessage(qa.prompt)}
-                      />
+          {meetingMode ? (
+            <>
+              {meetingRounds.length === 0 && (
+                <div style={{ textAlign: "center", paddingTop: 40, animation: "fadeUp 0.35s ease" }}>
+                  <div style={{ fontSize: 28, color: "#ffffff08", marginBottom: 12 }}>⬡</div>
+                  <div style={{ fontSize: 12, color: "#2a2a3a", marginBottom: 4 }}>חדר הישיבות</div>
+                  <div style={{ fontSize: 10, color: "#161626" }}>שלחי שאלה — כל {AGENTS.length} הסוכנים יענו במקביל</div>
+                  <div style={{ display: "flex", justifyContent: "center", gap: 6, marginTop: 20, flexWrap: "wrap" }}>
+                    {AGENTS.map(a => (
+                      <div key={a.id} style={{
+                        fontSize: 9, padding: "3px 8px", borderRadius: 4,
+                        background: a.accent + "12", color: a.accent + "80",
+                        border: `1px solid ${a.accent}20`,
+                      }}>{a.name}</div>
                     ))}
                   </div>
                 </div>
               )}
-            </div>
-          )}
-
-          {/* Messages */}
-          {msgs.map((msg, i) => (
-            <Message key={i} msg={msg} agent={activeAgent} />
-          ))}
-
-          {/* Typing indicator */}
-          {loading && (
-            <div style={{ display: "flex", gap: 8, alignItems: "flex-start", animation: "fadeUp 0.2s ease" }}>
-              <div style={{
-                width: 24, height: 24, borderRadius: 5,
-                background: activeAgent.accent+"12",
-                border: `1px solid ${activeAgent.accent}28`,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: 11, color: activeAgent.accent,
-              }}>{activeAgent.emoji}</div>
-              <div style={{
-                padding: "10px 14px",
-                background: "#090916",
-                border: `1px solid ${activeAgent.accent}20`,
-                borderRadius: "2px 8px 8px 8px",
-              }}>
-                <Dots color={activeAgent.accent} />
-              </div>
-            </div>
-          )}
-
-          {/* Quick actions after conversation starts */}
-          {msgs.length > 0 && !loading && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 4 }}>
-              {activeAgent.quickActions.slice(0, 3).map((qa, i) => (
-                <QuickBtn key={i} label={qa.label} accent={activeAgent.accent}
-                  onClick={() => sendMessage(qa.prompt)}
-                />
+              {meetingRounds.map((round, i) => (
+                <MeetingRound key={i} round={round} />
               ))}
-              {!showQuick && (
-                <button onClick={() => setShowQuick(true)} style={{
-                  padding: "6px 11px", borderRadius: 6, cursor: "pointer",
-                  background: "transparent", border: `1px solid #1a1a2a`,
-                  color: "#333", fontSize: 11, fontFamily: "inherit",
-                }}>עוד ›</button>
+            </>
+          ) : (
+            <>
+              {msgs.length === 0 && (
+                <div style={{ animation: "fadeUp 0.35s ease" }}>
+                  <div style={{ textAlign: "center", marginBottom: 28, paddingTop: 20 }}>
+                    <div style={{ fontSize: 26, color: activeAgent.accent+"30", marginBottom: 8 }}>{activeAgent.emoji}</div>
+                    <div style={{ fontSize: 12, color: "#2a2a3a" }}>{activeAgent.name} · {activeAgent.role}</div>
+                    <div style={{ fontSize: 10, color: "#161626", marginTop: 3 }}>{activeAgent.description}</div>
+                  </div>
+                  {showQuick && (
+                    <div>
+                      <div style={{ fontSize: 9, color: "#1e1e30", letterSpacing: 2, marginBottom: 10, textAlign: "center" }}>שאלות מהירות</div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 7, justifyContent: "center", maxWidth: 620, margin: "0 auto" }}>
+                        {activeAgent.quickActions.map((qa, i) => (
+                          <QuickBtn key={i} label={qa.label} accent={activeAgent.accent}
+                            onClick={() => sendMessage(qa.prompt)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
-            </div>
-          )}
-
-          {showQuick && msgs.length > 0 && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-              {activeAgent.quickActions.slice(3).map((qa, i) => (
-                <QuickBtn key={i} label={qa.label} accent={activeAgent.accent}
-                  onClick={() => sendMessage(qa.prompt)}
-                />
+              {msgs.map((msg, i) => (
+                <Message key={i} msg={msg} agent={activeAgent} />
               ))}
-            </div>
+              {loading && (
+                <div style={{ display: "flex", gap: 8, alignItems: "flex-start", animation: "fadeUp 0.2s ease" }}>
+                  <div style={{
+                    width: 24, height: 24, borderRadius: 5,
+                    background: activeAgent.accent+"12",
+                    border: `1px solid ${activeAgent.accent}28`,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 11, color: activeAgent.accent,
+                  }}>{activeAgent.emoji}</div>
+                  <div style={{
+                    padding: "10px 14px", background: "#090916",
+                    border: `1px solid ${activeAgent.accent}20`,
+                    borderRadius: "2px 8px 8px 8px",
+                  }}>
+                    <Dots color={activeAgent.accent} />
+                  </div>
+                </div>
+              )}
+              {msgs.length > 0 && !loading && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 4 }}>
+                  {activeAgent.quickActions.slice(0, 3).map((qa, i) => (
+                    <QuickBtn key={i} label={qa.label} accent={activeAgent.accent}
+                      onClick={() => sendMessage(qa.prompt)}
+                    />
+                  ))}
+                  {!showQuick && (
+                    <button onClick={() => setShowQuick(true)} style={{
+                      padding: "6px 11px", borderRadius: 6, cursor: "pointer",
+                      background: "transparent", border: "1px solid #1a1a2a",
+                      color: "#333", fontSize: 11, fontFamily: "inherit",
+                    }}>עוד ›</button>
+                  )}
+                </div>
+              )}
+              {showQuick && msgs.length > 0 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {activeAgent.quickActions.slice(3).map((qa, i) => (
+                    <QuickBtn key={i} label={qa.label} accent={activeAgent.accent}
+                      onClick={() => sendMessage(qa.prompt)}
+                    />
+                  ))}
+                </div>
+              )}
+            </>
           )}
 
           <div ref={bottomRef} />
@@ -396,11 +545,10 @@ export default function App() {
         <div style={{
           padding: "12px 18px",
           background: "#080810",
-          borderTop: `1px solid ${activeAgent.accent}14`,
+          borderTop: `1px solid ${meetingMode ? "#ffffff0a" : activeAgent.accent + "14"}`,
           display: "flex", gap: 9, alignItems: "flex-end",
         }}>
           <div style={{ flex: 1, position: "relative" }}>
-            {/* Project context indicator */}
             <div style={{
               position: "absolute", top: 8, left: 12,
               fontSize: 8, color: activeProject.color + "60",
@@ -409,13 +557,18 @@ export default function App() {
             <textarea
               value={input}
               onChange={e => setInput(e.target.value)}
-              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
-              placeholder={`שאל/י את ${activeAgent.name}...`}
+              onKeyDown={e => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  meetingMode ? sendMeetingMessage() : sendMessage();
+                }
+              }}
+              placeholder={meetingMode ? "שאל/י את כולם..." : `שאל/י את ${activeAgent.name}...`}
               rows={2}
               style={{
                 width: "100%",
                 background: "#0c0c1a",
-                border: `1px solid ${activeAgent.accent}22`,
+                border: `1px solid ${meetingMode ? "#ffffff15" : activeAgent.accent + "22"}`,
                 borderRadius: 7,
                 padding: "22px 13px 9px",
                 color: "#b0b0c8",
@@ -426,16 +579,17 @@ export default function App() {
                 direction: "rtl",
                 transition: "border-color 0.15s",
               }}
-              onFocus={e => e.target.style.borderColor = activeAgent.accent+"55"}
-              onBlur={e => e.target.style.borderColor = activeAgent.accent+"22"}
+              onFocus={e => e.target.style.borderColor = meetingMode ? "#ffffff30" : activeAgent.accent + "55"}
+              onBlur={e => e.target.style.borderColor = meetingMode ? "#ffffff15" : activeAgent.accent + "22"}
             />
           </div>
-          <button className="sbtn" onClick={() => sendMessage()}
+          <button className="sbtn"
+            onClick={() => meetingMode ? sendMeetingMessage() : sendMessage()}
             disabled={loading || !input.trim()}
             style={{
-              background: loading || !input.trim() ? "#0e0e1a" : activeAgent.accent+"18",
-              color: loading || !input.trim() ? "#222" : activeAgent.accent,
-              border: `1px solid ${loading || !input.trim() ? "#181828" : activeAgent.accent+"45"}`,
+              background: loading || !input.trim() ? "#0e0e1a" : meetingMode ? "#ffffff12" : activeAgent.accent + "18",
+              color: loading || !input.trim() ? "#222" : meetingMode ? "#fff" : activeAgent.accent,
+              border: `1px solid ${loading || !input.trim() ? "#181828" : meetingMode ? "#ffffff30" : activeAgent.accent + "45"}`,
               borderRadius: 7, padding: "14px 16px",
               cursor: loading || !input.trim() ? "not-allowed" : "pointer",
               fontSize: 15, fontFamily: "inherit", fontWeight: 700,
