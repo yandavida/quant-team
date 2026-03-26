@@ -2,7 +2,8 @@ const SYSTEM_CONTEXT = `
 SHARED PROJECT CONTEXT — Demobot2:
 - Institutional-grade risk management platform
 - Repo: Demobot2, GitHub — main + feature branches
-- Layers: Infrastructure (done) → FX Hedging (done) → Options (active dev) → Arbitrage (next)
+- Layers: Infrastructure (done) → FX Hedging (done) → Options (done) → Arbitrage Engine (active dev)
+- Arbitrage Engine: cross-asset arb detection (FX vs options), statistical arb, triangular arb, latency arb — Python, real-time signals, institutional execution
 - Language: Python (primary)
 - Clients: Nostro desks, Family Offices, Hedge Funds
 - Requirements: highest mathematical precision, full audit trail, institutional reliability
@@ -25,7 +26,7 @@ export const PROJECTS = [
     id: "arb",
     label: "Arbitrage Engine",
     color: "#c77dff",
-    description: "מנוע הארביטראז' — בתכנון"
+    description: "מנוע הארביטראז' — בפיתוח פעיל"
   },
   {
     id: "general",
@@ -51,6 +52,7 @@ export const AGENTS = [
       { label: "No-Arb בדיקה", prompt: "אילו תנאי no-arbitrage צריך לוודא ב-vol surface? butterfly constraints, calendar spread constraints?" },
       { label: "Put-Call Parity", prompt: "כיצד לממש בדיקת put-call parity אוטומטית על כל ה-option chain?" },
       { label: "Vanna/Volga", prompt: "הסבר את הקשר בין vanna ו-volga ל-vol surface hedging עבור FX options." },
+      { label: "Arb מתמטי", prompt: "אילו תנאים מתמטיים מגדירים הזדמנות ארביטראז' בין FX options לשוק הספוט? כיצד לזהות ולכמת את המרווח?" },
     ],
     system: `${SYSTEM_CONTEXT}
 You are Dr. Lior, a senior quantitative analyst with deep expertise in derivatives pricing and mathematical finance.
@@ -76,6 +78,7 @@ Respond in Hebrew unless technical terms require English — mix naturally.`,
       { label: "Layer Boundaries", prompt: "איך להגדיר נכון את ה-interface בין שכבת ה-FX לשכבת האופציות? data contracts, events, shared state?" },
       { label: "DB Selection", prompt: "איזו database מתאימה לאחסון vol surfaces ו-tick data? TimescaleDB vs Arctic vs kdb+ — מה מתאים לנו?" },
       { label: "Repo Structure", prompt: "איך לארגן את ה-Demobot2 repo — mono-repo vs multi-repo? folder structure לפרויקט multi-layer?" },
+      { label: "Arb Architecture", prompt: "תכנן את ארכיטקטורת מנוע הארביטראז' — איך מחבר ל-FX ו-Options layers? signal pipeline, execution, risk checks. Python." },
     ],
     system: `${SYSTEM_CONTEXT}
 You are Amit, a senior systems architect specializing in high-performance financial platforms in Python.
@@ -101,6 +104,7 @@ Respond in Hebrew unless technical terms require English.`,
       { label: "Performance Optimize", prompt: "קוד Python pricing שרץ לאט — איך לאפטם? numba JIT, vectorization, multiprocessing — דוגמאות קוד." },
       { label: "Code Review", prompt: "מה לחפש ב-code review של קוד quant ב-Python? checklist ספציפי למערכות financial." },
       { label: "Testing Patterns", prompt: "כיצד לכתוב טסטים לפונקציות pricing ב-Python? property-based testing עם Hypothesis, known-value regression." },
+      { label: "Arb Python", prompt: "כתוב מימוש Python של arb detector בין FX spot לFX options — איך לזהות deviation מ-put-call parity ולחשב expected profit?" },
     ],
     system: `${SYSTEM_CONTEXT}
 You are Niv, a senior Python developer specializing in quantitative finance implementation.
@@ -126,6 +130,7 @@ Respond in Hebrew, use English for all code and variable names.`,
       { label: "QuantLib Validation", prompt: "כיצד להשתמש ב-QuantLib כ-reference implementation לוולידציה של ה-pricer שלנו?" },
       { label: "CI Pipeline", prompt: "מה צריך להיות ב-GitHub Actions pipeline לבדיקות — לפי feature branch workflow של Demobot2?" },
       { label: "Regression Suite", prompt: "כיצד לבנות regression test suite שמוודא ש-Greeks לא השתנו בין PRs?" },
+      { label: "Arb בדיקות", prompt: "מה edge cases קריטיים לבדיקה במנוע ארביטראז'? spread חריג, latency spike, stale prices, execution failure." },
     ],
     system: `${SYSTEM_CONTEXT}
 You are Shira, QA engineer specializing in validation of quantitative financial systems in Python.
@@ -201,6 +206,7 @@ Respond in Hebrew unless technical terms require English.`,
       { label: "רגולציה", prompt: "מה ה-regulatory requirements הרלוונטיים ל-Demobot2? EMIR, MiFID II, Basel III — מה חייב ליישם?" },
       { label: "Model Risk", prompt: "כיצד לבנות model risk framework? validation requirements, model inventory, limitation documentation." },
       { label: "Audit Trail", prompt: "מה צריך ב-audit trail עבור מערכת institutional options? מה רגולטורים מחפשים?" },
+      { label: "Arb Risk", prompt: "אילו סיכונים ייחודיים למנוע ארביטראז'? execution risk, model risk, liquidity risk — כיצד להגדיר limits ו-kill switch?" },
     ],
     system: `${SYSTEM_CONTEXT}
 You are Tamar, a senior risk manager with institutional trading and compliance background.
