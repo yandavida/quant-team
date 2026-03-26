@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { AGENTS, PROJECTS } from "./agents.js";
 
-const API_KEY = import.meta.env.VITE_ANTHROPIC_KEY;
 
 // ─── Typing indicator ───────────────────────────────────────
 const Dots = ({ color }) => (
@@ -123,29 +122,14 @@ export default function App() {
 
     setConversations(p => ({ ...p, [activeAgent.id]: history }));
 
-    if (!API_KEY || API_KEY.includes("xxxxxx")) {
-      setConversations(p => ({
-        ...p,
-        [activeAgent.id]: [...history, {
-          role: "assistant",
-          content: "⚠️ חסר API key.\n\nפתחי קובץ .env והחליפי את VITE_ANTHROPIC_KEY ב-key האמיתי שלך מ-console.anthropic.com",
-        }]
-      }));
-      setLoading(false);
-      return;
-    }
-
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
+      const res = await fetch("/api/anthropic", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-api-key": API_KEY,
-          "anthropic-version": "2023-06-01",
-          "anthropic-dangerous-allow-cors": "true",
         },
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
+          model: "claude-sonnet-4-6",
           max_tokens: 1000,
           system: activeAgent.system,
           messages: apiHistory.map(m => ({ role: m.role, content: m.content })),
