@@ -2,7 +2,7 @@
   "name": "quant-team",
   "private": true,
   "version": "1.0.0",
-  "homepage": "https://YOUR_GITHUB_USERNAME.github.io/quant-team",
+  "homepage": "https://yandavida.github.io/quant-team",
   "type": "module",
   "scripts": {
     "dev": "vite",
